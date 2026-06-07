@@ -24,14 +24,74 @@ class MainNavScreen extends StatelessWidget {
       builder: (context, nav, _) {
         return Scaffold(
           backgroundColor: VuiTheme.background,
-          body: IndexedStack(
-            index: nav.currentIndex,
-            children: const [
-              HomeScreen(),
-              MoodScreen(),
-              BreatheScreen(),
-              SleepScreen(),
-              HelpScreen(),
+          body: Stack(
+            children: [
+              IndexedStack(
+                index: nav.currentIndex,
+                children: const [
+                  HomeScreen(),
+                  MoodScreen(),
+                  BreatheScreen(),
+                  SleepScreen(),
+                  HelpScreen(),
+                ],
+              ),
+              // Speech Overlay
+              Consumer<VuiStateManager>(
+                builder: (context, mgr, _) {
+                  if (mgr.state == VuiState.idle || mgr.state == VuiState.guiding) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  String displayText = '';
+                  if (mgr.state == VuiState.listening) {
+                    displayText = mgr.speechText.isEmpty ? 'Listening...' : mgr.speechText;
+                  } else if (mgr.state == VuiState.speaking) {
+                    // Show Sera's last chat message
+                    if (mgr.chatHistory.isNotEmpty) {
+                      displayText = mgr.chatHistory.last['text'] ?? '';
+                    } else {
+                      displayText = 'Speaking...';
+                    }
+                  } else if (mgr.state == VuiState.processing) {
+                    displayText = 'Processing: "${mgr.speechText}"';
+                  }
+
+                  return Positioned(
+                    bottom: 16,
+                    left: 16,
+                    right: 16,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 300),
+                      opacity: displayText.isNotEmpty ? 1.0 : 0.0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1F22).withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: VuiTheme.moodColor.withValues(alpha: 0.3)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: Text(
+                          displayText,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
           bottomNavigationBar: _BottomNav(
@@ -41,23 +101,6 @@ class MainNavScreen extends StatelessWidget {
               _onTabChange(context, i);
             },
           ),
-          floatingActionButton: Consumer<VuiStateManager>(
-            builder: (context, mgr, _) {
-              final isActive = mgr.state == VuiState.listening ||
-                  mgr.state == VuiState.speaking;
-              return Container(
-                margin: const EdgeInsets.only(top: 40),
-                child: SeraOrb(
-                  color: VuiTheme.listeningColor,
-                  orbSize: 64,
-                  isActive: isActive,
-                  onTapDown: (_) => mgr.startListening(),
-                  onTapUp: (_) => mgr.stopListening(),
-                ),
-              );
-            },
-          ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
         );
       },
     );

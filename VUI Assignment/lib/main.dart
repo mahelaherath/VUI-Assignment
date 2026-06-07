@@ -17,8 +17,11 @@ class SeraApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => VuiStateManager()),
         ChangeNotifierProvider(create: (_) => NavigationNotifier()),
+        ChangeNotifierProxyProvider<NavigationNotifier, VuiStateManager>(
+          create: (_) => VuiStateManager(),
+          update: (_, nav, mgr) => mgr!..setNavigationNotifier(nav),
+        ),
       ],
       child: MaterialApp(
         title: 'Sera',

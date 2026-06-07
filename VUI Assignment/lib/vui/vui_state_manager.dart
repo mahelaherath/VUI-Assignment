@@ -20,6 +20,9 @@ class VuiStateManager extends ChangeNotifier {
   bool _isMuted = false;
   String _speechText = '';
 
+  // Navigation
+  NavigationNotifier? _nav;
+
   // Emotion metadata
   String _detectedEmotion = '';
   String _detectedIntensity = '';
@@ -60,6 +63,10 @@ class VuiStateManager extends ChangeNotifier {
     _speech = stt.SpeechToText();
     _tts = FlutterTts();
     _initVoiceServices();
+  }
+
+  void setNavigationNotifier(NavigationNotifier nav) {
+    _nav = nav;
   }
 
   // ── Initialisation ────────────────────────────────────────────────────────
@@ -182,7 +189,13 @@ class VuiStateManager extends ChangeNotifier {
 
     final lower = text.toLowerCase().trim();
 
-    // ── 1. Crisis check (highest priority) ─────────────────────────────────
+    // ── 1. Wake word check ──────────────────────────────────────────────────
+    if (lower == 'sera' || lower.startsWith('hey sera') || lower.startsWith('hi sera')) {
+      _speakSera("Yes, I am hearing you. Tell me what you want.");
+      return;
+    }
+
+    // ── 2. Crisis check (highest priority) ─────────────────────────────────
     if (DialogueEngine.checkCrisis(lower)) {
       nav.navigateTo(4); // Help tab
       triggerCrisisBreakout(text);
@@ -345,8 +358,14 @@ class VuiStateManager extends ChangeNotifier {
       await _speech.listen(
         onResult: (val) {
           _speechText = val.recognizedWords;
-          _checkCrisisInterception(_speechText);
           notifyListeners();
+          
+          // Check for wake word instantly
+          if (_speechText.toLowerCase().trim() == 'sera') {
+            stopListening();
+          }
+          
+          _checkCrisisInterception(_speechText);
         },
         listenFor: const Duration(seconds: 12),
         pauseFor: const Duration(seconds: 3),
@@ -368,10 +387,12 @@ class VuiStateManager extends ChangeNotifier {
       _setState(VuiState.idle);
       return;
     }
-    // NOTE: Without access to NavigationNotifier here we fall back to
-    // dialogue-only mode. The global mic button passes nav directly
-    // via processVoiceCommand().
-    _processDialogue(_speechText);
+    
+    if (_nav != null) {
+      processVoiceCommand(_speechText, _nav!);
+    } else {
+      _processDialogue(_speechText);
+    }
   }
 
   /// Simulated text input (for emoji taps / chip taps)
