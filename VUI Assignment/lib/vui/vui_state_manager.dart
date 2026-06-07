@@ -1,40 +1,46 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dialogue_engine.dart';
+import 'navigation_notifier.dart';
 
 class VuiStateManager extends ChangeNotifier {
   final DialogueEngine _engine = DialogueEngine();
-  
-  // State variables
+
+  // ── State ─────────────────────────────────────────────────────────────────
   VuiState _state = VuiState.idle;
   VuiModule _currentModule = VuiModule.mood;
   late DialogueNode _currentNode;
   final List<Map<String, String>> _chatHistory = [];
-  
+
   bool _isMuted = false;
-  String _speechText = "";
-  
-  // Mood Detection Metadata
-  String _detectedEmotion = "";
-  String _detectedIntensity = "";
-  
-  // Guided Breathing Metadata
-  String _breathingPhase = "Inhale";
+  String _speechText = '';
+
+  // Emotion metadata
+  String _detectedEmotion = '';
+  String _detectedIntensity = '';
+
+  // Breathing state
+  String _breathingPhase = 'Inhale';
   int _breathingCycle = 1;
   final int _maxCycles = 4;
   bool _isBreathingActive = false;
   Timer? _breathingTimer;
 
-  // External APIs / Service wrappers
+  // STT / TTS
   late stt.SpeechToText _speech;
   late FlutterTts _tts;
   bool _sttInitialized = false;
-  bool _simulatedMode = false; // Fallback if physical mic/library fails
+  bool _simulatedMode = false;
 
-  // Getters
+  // Pending close flag (speak goodbye then exit)
+  bool _pendingClose = false;
+
+  // ── Getters ───────────────────────────────────────────────────────────────
   VuiState get state => _state;
   VuiModule get currentModule => _currentModule;
   DialogueNode get currentNode => _currentNode;
@@ -48,6 +54,7 @@ class VuiStateManager extends ChangeNotifier {
   int get maxCycles => _maxCycles;
   bool get isBreathingActive => _isBreathingActive;
 
+  // ── Constructor ───────────────────────────────────────────────────────────
   VuiStateManager() {
     _currentNode = _engine.getNode('mood_start');
     _speech = stt.SpeechToText();
@@ -55,17 +62,30 @@ class VuiStateManager extends ChangeNotifier {
     _initVoiceServices();
   }
 
+  // ── Initialisation ────────────────────────────────────────────────────────
   Future<void> _initVoiceServices() async {
     try {
-      // Setup Text to Speech
-      await _tts.setLanguage("en-US");
-      await _tts.setSpeechRate(0.45);
+      // 1. Explicitly request Microphone permissions (vital for Android 11+)
+      var status = await Permission.microphone.status;
+      if (!status.isGranted) {
+        status = await Permission.microphone.request();
+      }
+      if (status.isPermanentlyDenied) {
+        debugPrint('Microphone permission permanently denied. Open app settings.');
+      }
+
+      await _tts.setLanguage('en-US');
+      await _tts.setSpeechRate(0.47);
       await _tts.setVolume(1.0);
-      await _tts.setPitch(1.0);
+      await _tts.setPitch(1.05);
 
       _tts.setCompletionHandler(() {
+        if (_pendingClose) {
+          _pendingClose = false;
+          SystemNavigator.pop();
+          return;
+        }
         if (_state == VuiState.speaking) {
-          // If we finished speaking a normal prompt, go to listening automatically
           if (_currentNode.chips.isNotEmpty) {
             startListening();
           } else {
@@ -74,30 +94,25 @@ class VuiStateManager extends ChangeNotifier {
         }
       });
 
-      // Setup Speech to Text
       _sttInitialized = await _speech.initialize(
         onStatus: (val) {
-          if (val == 'done' || val == 'notListening') {
-            if (_state == VuiState.listening) {
-              _onSpeechFinished();
-            }
+          if ((val == 'done' || val == 'notListening') &&
+              _state == VuiState.listening) {
+            _onSpeechFinished();
           }
         },
-        onError: (val) {
-          debugPrint("STT Error: $val");
-        },
+        onError: (val) => debugPrint('STT Error: $val'),
       );
 
       if (!_sttInitialized) {
-        debugPrint("Speech-to-text initialization failed. Falling back to Simulated Mode.");
+        debugPrint('STT init failed – simulated mode');
         _simulatedMode = true;
       }
     } catch (e) {
-      debugPrint("Voice services failed to init. Running in mock simulator mode: $e");
+      debugPrint('Voice services failed: $e – simulated mode');
       _simulatedMode = true;
     }
 
-    // Trigger initial greeting
     triggerGreeting();
   }
 
@@ -106,27 +121,32 @@ class VuiStateManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Toggle mute ───────────────────────────────────────────────────────────
   void toggleMute() {
     _isMuted = !_isMuted;
     _tts.setVolume(_isMuted ? 0.0 : 1.0);
     notifyListeners();
   }
 
-  /// Start the conversational greeting
+  // ── Greeting ──────────────────────────────────────────────────────────────
   void triggerGreeting() {
     _chatHistory.clear();
     _currentModule = VuiModule.mood;
     _currentNode = _engine.getNode('mood_start');
-    _speakSera(_currentNode.text);
+    _speakSera(
+      "Hi! I'm Sera, your mental health companion. "
+      "How are you feeling today? "
+      "You can talk to me, or say commands like 'mood', 'breathe', 'sleep', or 'help'.",
+    );
   }
 
-  /// Change active modules (e.g. from direct navigation actions)
+  // ── Module transition (called from nav bar taps) ──────────────────────────
   void transitionToModule(VuiModule module) {
     _cancelBreathing();
     _tts.stop();
     _speech.stop();
     _currentModule = module;
-    
+
     switch (module) {
       case VuiModule.mood:
         _currentNode = _engine.getNode('mood_start');
@@ -144,42 +164,233 @@ class VuiStateManager extends ChangeNotifier {
     _speakSera(_currentNode.text);
   }
 
-  /// Intercept transcripts in real time for crisis keywords
+  // ─────────────────────────────────────────────────────────────────────────
+  // VOICE COMMAND ROUTER  (main logic entry point from mic)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Called after STT result is ready.
+  /// [nav]  — NavigationNotifier to switch tabs
+  /// Returns true if a navigation/system command was handled.
+  void processVoiceCommand(
+    String text,
+    NavigationNotifier nav,
+  ) {
+    if (text.trim().isEmpty) {
+      _setState(VuiState.idle);
+      return;
+    }
+
+    final lower = text.toLowerCase().trim();
+
+    // ── 1. Crisis check (highest priority) ─────────────────────────────────
+    if (DialogueEngine.checkCrisis(lower)) {
+      nav.navigateTo(4); // Help tab
+      triggerCrisisBreakout(text);
+      return;
+    }
+
+    // ── 2. Navigation commands ──────────────────────────────────────────────
+    if (_matchesNav(lower, ['home', 'go home', 'main screen', 'main'])) {
+      nav.navigateTo(0);
+      _speakSera("Going to Home.");
+      return;
+    }
+    if (_matchesNav(lower,
+        ['mood', 'check mood', 'how i feel', 'feelings', 'emotional check'])) {
+      nav.navigateTo(1);
+      transitionToModule(VuiModule.mood);
+      return;
+    }
+    if (_matchesNav(lower, [
+      'breathe',
+      'breathing',
+      'meditation',
+      'meditate',
+      'relax',
+      'calm',
+      'exercise',
+      'breath',
+    ])) {
+      nav.navigateTo(2);
+      transitionToModule(VuiModule.breathing);
+      return;
+    }
+    if (_matchesNav(lower,
+        ['sleep', 'bedtime', 'tired', 'rest', 'sleep tips', 'insomnia'])) {
+      nav.navigateTo(3);
+      transitionToModule(VuiModule.sleep);
+      return;
+    }
+    if (_matchesNav(lower,
+        ['help', 'emergency', 'crisis', 'sos', 'call', 'hotline', 'contacts'])) {
+      nav.navigateTo(4);
+      _currentModule = VuiModule.crisis;
+      _currentNode = _engine.getNode('crisis_start');
+      _speakSera("I've opened the emergency contacts page. Say 'call' to dial the hotline.");
+      return;
+    }
+
+    // ── 3. Breathing exercise controls ─────────────────────────────────────
+    if (_matchesNav(lower, ['start', 'begin', 'start breathing', 'begin breathing'])) {
+      startBreathingExercise();
+      return;
+    }
+    if (_matchesNav(lower, ['stop', 'pause', 'stop breathing', 'pause breathing'])) {
+      pauseBreathing();
+      _speakSera("Exercise paused. Tap the orb or say 'start' to continue.");
+      return;
+    }
+
+    // ── 4. Close app ────────────────────────────────────────────────────────
+    if (_matchesNav(lower,
+        ['close', 'exit', 'quit', 'close app', 'exit app', 'bye', 'goodbye'])) {
+      _pendingClose = true;
+      _speakSera("Take care! Goodbye.");
+      // SystemNavigator.pop() fires automatically in TTS completion handler
+      return;
+    }
+
+    // ── 5. Dial hotline from Help screen ────────────────────────────────────
+    if (_currentModule == VuiModule.crisis &&
+        lower.contains('call')) {
+      dialEmergencyHotline();
+      return;
+    }
+
+    // ── 6. Otherwise → feed into DialogueEngine ─────────────────────────────
+    _processDialogue(text);
+  }
+
+  // Helper: checks if input contains any of the given phrases
+  bool _matchesNav(String lower, List<String> phrases) {
+    return phrases.any((p) => lower.contains(p));
+  }
+
+  // ── Crisis breakout ───────────────────────────────────────────────────────
   void _checkCrisisInterception(String text) {
     if (DialogueEngine.checkCrisis(text)) {
-      debugPrint("CRITICAL: Crisis keyword detected in transcript: '$text'");
-      triggerCrisisBreakout(text);
+      debugPrint('CRITICAL: Crisis keyword: $text');
     }
   }
 
-  /// Override dialogue flows and route immediately to Help page
   void triggerCrisisBreakout(String userTriggerPhrase) {
     _cancelBreathing();
     _tts.stop();
     _speech.stop();
-    
+
     _currentModule = VuiModule.crisis;
     _currentNode = _engine.getNode('crisis_start');
     _setState(VuiState.distress);
 
-    // Record user distress phrase
-    _chatHistory.add({"sender": "You", "text": userTriggerPhrase});
-    
-    // Sera responds immediately with emergency script
+    _chatHistory.add({'sender': 'You', 'text': userTriggerPhrase});
     _speakSera(_currentNode.text);
   }
 
-  /// Voice outputs
+  // ── Dialogue engine path ──────────────────────────────────────────────────
+  void _processDialogue(String text) {
+    if (text.isEmpty) {
+      _setState(VuiState.idle);
+      return;
+    }
+
+    _setState(VuiState.processing);
+    _chatHistory.add({'sender': 'You', 'text': text});
+    notifyListeners();
+
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      // Emotion detection on mood screen
+      if (_currentNode.id == 'mood_start') {
+        final lower = text.toLowerCase();
+        if (lower.contains('anxious') ||
+            lower.contains('exam') ||
+            lower.contains('stress')) {
+          _detectedEmotion = 'Anxious';
+          _detectedIntensity = 'Medium';
+        } else if (lower.contains('sad') || lower.contains('depressed')) {
+          _detectedEmotion = 'Sad';
+          _detectedIntensity = 'High';
+        } else if (lower.contains('good') ||
+            lower.contains('happy') ||
+            lower.contains('fine')) {
+          _detectedEmotion = 'Happy';
+          _detectedIntensity = 'Low';
+        } else {
+          _detectedEmotion = 'Neutral';
+          _detectedIntensity = 'Low';
+        }
+      }
+
+      if (_currentNode.next != null) {
+        final nextId = _currentNode.next!(text);
+
+        if (nextId == 'breathing_intro') {
+          _currentModule = VuiModule.breathing;
+        }
+
+        _currentNode = _engine.getNode(nextId);
+        _speakSera(_currentNode.text);
+      } else {
+        _setState(VuiState.idle);
+      }
+    });
+  }
+
+  // ── STT control ───────────────────────────────────────────────────────────
+  Future<void> startListening() async {
+    if (_state == VuiState.guiding) return;
+    _speechText = '';
+    _setState(VuiState.listening);
+
+    if (!_simulatedMode && _sttInitialized) {
+      await _speech.listen(
+        onResult: (val) {
+          _speechText = val.recognizedWords;
+          _checkCrisisInterception(_speechText);
+          notifyListeners();
+        },
+        listenFor: const Duration(seconds: 12),
+        pauseFor: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  Future<void> stopListening() async {
+    if (_state != VuiState.listening) return;
+    if (!_simulatedMode && _sttInitialized) {
+      await _speech.stop();
+    }
+    _onSpeechFinished();
+  }
+
+  /// Called when STT automatically finishes (timeout / silence)
+  void _onSpeechFinished() {
+    if (_speechText.isEmpty) {
+      _setState(VuiState.idle);
+      return;
+    }
+    // NOTE: Without access to NavigationNotifier here we fall back to
+    // dialogue-only mode. The global mic button passes nav directly
+    // via processVoiceCommand().
+    _processDialogue(_speechText);
+  }
+
+  /// Simulated text input (for emoji taps / chip taps)
+  void submitSimulatedSpeech(String text) {
+    _speechText = text;
+    _checkCrisisInterception(text);
+    _processDialogue(text);
+  }
+
+  // ── TTS ───────────────────────────────────────────────────────────────────
   Future<void> _speakSera(String text) async {
     _setState(VuiState.speaking);
-    _chatHistory.add({"sender": "Sera", "text": text});
+    _chatHistory.add({'sender': 'Sera', 'text': text});
     notifyListeners();
 
     if (!_isMuted) {
       await _tts.speak(text);
     } else {
-      // In mute mode, simulate speaking wait times
-      Future.delayed(const Duration(seconds: 3), () {
+      Future.delayed(const Duration(seconds: 2), () {
         if (_state == VuiState.speaking) {
           if (_currentNode.chips.isNotEmpty) {
             startListening();
@@ -191,124 +402,14 @@ class VuiStateManager extends ChangeNotifier {
     }
   }
 
-  /// Voice inputs
-  Future<void> startListening() async {
-    if (_state == VuiState.guiding) return;
-    
-    _speechText = "";
-    _setState(VuiState.listening);
-
-    if (!_simulatedMode && _sttInitialized) {
-      await _speech.listen(
-        onResult: (val) {
-          _speechText = val.recognizedWords;
-          _checkCrisisInterception(_speechText);
-          notifyListeners();
-        },
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 3),
-      );
-    } else {
-      // Mock simulator typing mode for testing
-      debugPrint("Simulating speech input... Type in fallback interface");
-    }
-  }
-
-  Future<void> stopListening() async {
-    if (_state != VuiState.listening) return;
-
-    if (!_simulatedMode) {
-      await _speech.stop();
-    }
-    _onSpeechFinished();
-  }
-
-  void submitSimulatedSpeech(String text) {
-    _speechText = text;
-    _checkCrisisInterception(text);
-    _onSpeechFinished();
-  }
-
-  void _onSpeechFinished() {
-    if (_speechText.isEmpty) {
-      _setState(VuiState.idle);
-      return;
-    }
-
-    _setState(VuiState.processing);
-    _chatHistory.add({"sender": "You", "text": _speechText});
-    notifyListeners();
-
-    // Small delay to simulate processing state
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (DialogueEngine.checkCrisis(_speechText)) {
-        // Crisis is handled instantly by real-time hook, double check here
-        return;
-      }
-
-      // Process sleep voice quick commands on distress screen
-      if (_currentNode.id == 'crisis_contacts') {
-        if (_speechText.toLowerCase().contains("call")) {
-          dialEmergencyHotline();
-          _setState(VuiState.idle);
-          return;
-        } else if (_speechText.toLowerCase().contains("text")) {
-          textEmergencyLine();
-          _setState(VuiState.idle);
-          return;
-        } else if (_speechText.toLowerCase().contains("breathe")) {
-          transitionToModule(VuiModule.breathing);
-          return;
-        }
-      }
-
-      // Check-in specific features: NLP outputs
-      if (_currentNode.id == 'mood_start') {
-        final lower = _speechText.toLowerCase();
-        if (lower.contains('anxious') || lower.contains('exam') || lower.contains('stress')) {
-          _detectedEmotion = "Anxious";
-          _detectedIntensity = "Medium";
-        } else if (lower.contains('sad') || lower.contains('depressed')) {
-          _detectedEmotion = "Sad";
-          _detectedIntensity = "High";
-        } else {
-          _detectedEmotion = "Neutral";
-          _detectedIntensity = "Low";
-        }
-      }
-
-      // Determine next dialogue step
-      if (_currentNode.next != null) {
-        final nextId = _currentNode.next!(_speechText);
-        
-        if (nextId == 'breathing_intro') {
-          _currentModule = VuiModule.breathing;
-        }
-        
-        _currentNode = _engine.getNode(nextId);
-        
-        if (_currentNode.id == 'breathing_intro') {
-          // Launch breathing transition
-          _currentModule = VuiModule.breathing;
-          _currentNode = _engine.getNode('breathing_intro');
-        }
-        
-        _speakSera(_currentNode.text);
-      } else {
-        _setState(VuiState.idle);
-      }
-    });
-  }
-
-  // --- BREATHING ENGINE (4-7-8 Timing Loop) ---
+  // ── Breathing engine ──────────────────────────────────────────────────────
   void startBreathingExercise() {
     _cancelBreathing();
     _setState(VuiState.guiding);
     _isBreathingActive = true;
     _breathingCycle = 1;
-    _breathingPhase = "Inhale";
+    _breathingPhase = 'Inhale';
     notifyListeners();
-
     _runBreathingCycle();
   }
 
@@ -318,31 +419,24 @@ class VuiStateManager extends ChangeNotifier {
       return;
     }
 
-    // Phase 1: Inhale (4 seconds)
-    _breathingPhase = "Inhale";
+    _breathingPhase = 'Inhale';
     notifyListeners();
-    _speakVoiceGuidance("Inhale slowly through your nose... 1... 2... 3... 4...");
+    _speakVoiceGuidance('Inhale slowly through your nose… 1… 2… 3… 4…');
 
     _breathingTimer = Timer(const Duration(seconds: 4), () {
       if (!_isBreathingActive) return;
-
-      // Phase 2: Hold (7 seconds)
-      _breathingPhase = "Hold";
+      _breathingPhase = 'Hold';
       notifyListeners();
-      _speakVoiceGuidance("Hold... 1... 2... 3... 4... 5... 6... 7... Well done.");
+      _speakVoiceGuidance('Hold… 1… 2… 3… 4… 5… 6… 7…');
 
       _breathingTimer = Timer(const Duration(seconds: 7), () {
         if (!_isBreathingActive) return;
-
-        // Phase 3: Exhale (8 seconds)
-        _breathingPhase = "Exhale";
+        _breathingPhase = 'Exhale';
         notifyListeners();
-        _speakVoiceGuidance("Exhale... 1... 2... 3... 4... 5... 6... 7... 8...");
+        _speakVoiceGuidance('Exhale slowly… 1… 2… 3… 4… 5… 6… 7… 8…');
 
         _breathingTimer = Timer(const Duration(seconds: 8), () {
           if (!_isBreathingActive) return;
-
-          // Increment and repeat
           _breathingCycle++;
           _runBreathingCycle();
         });
@@ -350,12 +444,10 @@ class VuiStateManager extends ChangeNotifier {
     });
   }
 
-  void _speakVoiceGuidance(String guidance) async {
-    _chatHistory.add({"sender": "Sera", "text": guidance});
+  void _speakVoiceGuidance(String text) async {
+    _chatHistory.add({'sender': 'Sera', 'text': text});
     notifyListeners();
-    if (!_isMuted) {
-      await _tts.speak(guidance);
-    }
+    if (!_isMuted) await _tts.speak(text);
   }
 
   void pauseBreathing() {
@@ -368,14 +460,13 @@ class VuiStateManager extends ChangeNotifier {
   void stopBreathing() {
     _cancelBreathing();
     _setState(VuiState.idle);
-    transitionToModule(VuiModule.mood);
   }
 
   void _cancelBreathing() {
     _isBreathingActive = false;
     _breathingTimer?.cancel();
     _breathingCycle = 1;
-    _breathingPhase = "Inhale";
+    _breathingPhase = 'Inhale';
   }
 
   void _completeBreathingExercise() {
@@ -383,42 +474,32 @@ class VuiStateManager extends ChangeNotifier {
     _setState(VuiState.idle);
     _currentNode = DialogueNode(
       id: 'breathing_complete',
-      text: "All 4 cycles complete. How do you feel now?",
-      chips: ["Better", "Still anxious", "Tired"],
+      text: 'All cycles complete. How do you feel now?',
+      chips: ['Better', 'Still anxious', 'Tired'],
     );
     _speakSera(_currentNode.text);
   }
 
-  // --- EMERGENCY TELEPHONY TRIPPERS ---
+  // ── Emergency helpers ─────────────────────────────────────────────────────
   Future<void> dialEmergencyHotline() async {
-    final Uri phoneUri = Uri(scheme: 'tel', path: '116123');
+    final uri = Uri(scheme: 'tel', path: '1926');
     try {
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-      } else {
-        debugPrint("Could not launch dialer for 116123");
-      }
+      if (await canLaunchUrl(uri)) await launchUrl(uri);
     } catch (e) {
-      debugPrint("Hotline dialer fail: $e");
+      debugPrint('Hotline dial fail: $e');
     }
   }
 
   Future<void> textEmergencyLine() async {
-    final Uri smsUri = Uri(
+    final uri = Uri(
       scheme: 'sms',
       path: '85258',
-      queryParameters: <String, String>{
-        'body': 'HOME',
-      },
+      queryParameters: {'body': 'HOME'},
     );
     try {
-      if (await canLaunchUrl(smsUri)) {
-        await launchUrl(smsUri);
-      } else {
-        debugPrint("Could not launch SMS for 85258");
-      }
+      if (await canLaunchUrl(uri)) await launchUrl(uri);
     } catch (e) {
-      debugPrint("SMS client fail: $e");
+      debugPrint('SMS fail: $e');
     }
   }
 
