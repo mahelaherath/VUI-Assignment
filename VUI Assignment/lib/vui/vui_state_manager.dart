@@ -337,9 +337,77 @@ class VuiStateManager extends ChangeNotifier {
     notifyListeners();
 
     Future.delayed(const Duration(milliseconds: 1200), () {
-      // Emotion detection on mood screen
+      final lower = text.toLowerCase();
+      bool isDirectMoodKeyword = lower.contains('happy') ||
+          lower.contains('calm') ||
+          lower.contains('sad') ||
+          lower.contains('angry') ||
+          lower.contains('distressed') ||
+          lower.contains('good') ||
+          lower.contains('fine') ||
+          lower.contains('great') ||
+          lower.contains('anxious') ||
+          lower.contains('exam') ||
+          lower.contains('stress') ||
+          lower.contains('nervous');
+
+      if (_currentModule == VuiModule.mood && isDirectMoodKeyword) {
+        String targetNodeId = 'mood_fallback_detected';
+        if (lower.contains('happy')) {
+          _detectedEmotion = 'Happy';
+          _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 0;
+          _shiftWeeklyChart(0.95);
+          targetNodeId = 'mood_happy_detected';
+        } else if (lower.contains('calm')) {
+          _detectedEmotion = 'Calm';
+          _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 1;
+          _shiftWeeklyChart(0.80);
+          targetNodeId = 'mood_calm_detected';
+        } else if (lower.contains('sad')) {
+          _detectedEmotion = 'Sad';
+          _detectedIntensity = 'Medium';
+          _selectedEmojiIndex = 2;
+          _shiftWeeklyChart(0.35);
+          targetNodeId = 'mood_sad_detected';
+        } else if (lower.contains('angry')) {
+          _detectedEmotion = 'Angry';
+          _detectedIntensity = 'High';
+          _selectedEmojiIndex = 3;
+          _shiftWeeklyChart(0.55);
+          targetNodeId = 'mood_angry_detected';
+        } else if (lower.contains('distressed')) {
+          _detectedEmotion = 'Distressed';
+          _detectedIntensity = 'High';
+          _selectedEmojiIndex = 4;
+          _shiftWeeklyChart(0.15);
+          targetNodeId = 'mood_distressed_detected';
+        } else if (lower.contains('anxious') ||
+            lower.contains('exam') ||
+            lower.contains('stress') ||
+            lower.contains('nervous')) {
+          _detectedEmotion = 'Anxious';
+          _detectedIntensity = 'Medium';
+          _shiftWeeklyChart(0.40);
+          targetNodeId = 'mood_anxious_detected';
+        } else if (lower.contains('good') ||
+            lower.contains('fine') ||
+            lower.contains('great')) {
+          _detectedEmotion = 'Happy';
+          _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 0;
+          _shiftWeeklyChart(0.95);
+          targetNodeId = 'mood_happy_detected';
+        }
+
+        _currentNode = _engine.getNode(targetNodeId);
+        _speakSera(_currentNode.text);
+        return;
+      }
+
+      // Emotion detection on mood screen (standard path fallback)
       if (_currentNode.id == 'mood_start') {
-        final lower = text.toLowerCase();
         if (lower.contains('happy')) {
           _detectedEmotion = 'Happy';
           _detectedIntensity = 'Low';
