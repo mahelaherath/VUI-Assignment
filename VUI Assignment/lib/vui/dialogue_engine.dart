@@ -44,8 +44,16 @@ class DialogueEngine {
             return 'mood_anxious_detected';
           } else if (cleaned.contains('sad') || cleaned.contains('depressed') || cleaned.contains('down')) {
             return 'mood_sad_detected';
-          } else if (cleaned.contains('good') || cleaned.contains('happy') || cleaned.contains('great') || cleaned.contains('fine')) {
+          } else if (cleaned.contains('happy')) {
+            return 'mood_happy_detected';
+          } else if (cleaned.contains('good') || cleaned.contains('great') || cleaned.contains('fine')) {
             return 'mood_good_detected';
+          } else if (cleaned.contains('calm') || cleaned.contains('peaceful')) {
+            return 'mood_calm_detected';
+          } else if (cleaned.contains('angry') || cleaned.contains('mad') || cleaned.contains('frustrated')) {
+            return 'mood_angry_detected';
+          } else if (cleaned.contains('distressed') || cleaned.contains('hurting')) {
+            return 'mood_distressed_detected';
           }
           return 'mood_fallback_detected';
         },
@@ -79,6 +87,45 @@ class DialogueEngine {
         next: (input) {
           if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) return 'breathing_intro';
           if (input.toLowerCase().contains('sleep')) return 'sleep_start';
+          return 'mood_end';
+        },
+      ),
+      'mood_happy_detected': DialogueNode(
+        id: 'mood_happy_detected',
+        text: "I'm so glad to hear you're feeling happy! Keeping up with healthy routines is key. Let me know if you want to practice your daily breathing or get sleep tips.",
+        chips: ["Breathing exercise", "Sleep support", "Exit"],
+        next: (input) {
+          if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) return 'breathing_intro';
+          if (input.toLowerCase().contains('sleep')) return 'sleep_start';
+          return 'mood_end';
+        },
+      ),
+      'mood_calm_detected': DialogueNode(
+        id: 'mood_calm_detected',
+        text: "I'm glad to hear you're feeling calm. It's a wonderful state of mind. We can do a quick breathing exercise to maintain this peace, or look at sleep tips.",
+        chips: ["Breathing exercise", "Sleep support", "Exit"],
+        next: (input) {
+          if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) return 'breathing_intro';
+          if (input.toLowerCase().contains('sleep')) return 'sleep_start';
+          return 'mood_end';
+        },
+      ),
+      'mood_angry_detected': DialogueNode(
+        id: 'mood_angry_detected',
+        text: "I hear you. It's completely okay to feel angry sometimes. Let's try to release that tension. Would you like to try a breathing exercise, or just talk?",
+        chips: ["Breathing exercise", "Talk more", "Exit"],
+        next: (input) {
+          if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) return 'breathing_intro';
+          return 'mood_end';
+        },
+      ),
+      'mood_distressed_detected': DialogueNode(
+        id: 'mood_distressed_detected',
+        text: "I'm really sorry you're feeling distressed. Please remember you're not alone. We can do a breathing exercise together, or I can show you emergency support contacts.",
+        chips: ["Breathe together", "Show contacts", "Exit"],
+        next: (input) {
+          if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) return 'breathing_intro';
+          if (input.toLowerCase().contains('contact') || input.toLowerCase().contains('show')) return 'crisis_contacts';
           return 'mood_end';
         },
       ),

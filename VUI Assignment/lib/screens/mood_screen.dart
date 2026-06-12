@@ -16,14 +16,7 @@ class MoodScreen extends StatefulWidget {
 }
 
 class _MoodScreenState extends State<MoodScreen> {
-  int _selectedEmoji = 0;
-
   static const _emojis = ['😊', '😌', '😢', '😤', '😭'];
-  static const _moodLabels = ['Happy', 'Calm', 'Sad', 'Angry', 'Distressed'];
-
-  // Weekly mood values (0.0–1.0); Thursday = index 3 is peak
-  static const _weekValues = [0.40, 0.70, 0.60, 1.0, 0.50, 0.20, 0.10];
-  static const _weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
   @override
   Widget build(BuildContext context) {
@@ -91,11 +84,10 @@ class _MoodScreenState extends State<MoodScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: List.generate(_emojis.length, (i) {
-                final sel = _selectedEmoji == i;
+                final sel = mgr.selectedEmojiIndex == i;
                 return GestureDetector(
                   onTap: () {
-                    setState(() => _selectedEmoji = i);
-                    mgr.submitSimulatedSpeech(_moodLabels[i]);
+                    mgr.selectEmoji(i);
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -136,10 +128,10 @@ class _MoodScreenState extends State<MoodScreen> {
 
             // ── Weekly mood chart ────────────────────────────────
             _WeeklyMoodCard(
-              values: _weekValues,
-              days: _weekDays,
+              values: mgr.weekValues,
+              days: mgr.weekDays,
               color: VuiTheme.moodColor,
-              highlightIndex: 3, // Thursday
+              highlightIndex: mgr.highlightIndex,
             ),
           ],
         ),

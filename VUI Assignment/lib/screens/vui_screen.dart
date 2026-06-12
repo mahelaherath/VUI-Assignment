@@ -258,8 +258,15 @@ class _VuiScreenState extends State<VuiScreen> {
     }
 
     // Mood detected panel (Screenshot 1, right screen)
+    final isEmotionNode = manager.currentNode.id == 'mood_anxious_detected' ||
+        manager.currentNode.id == 'mood_happy_detected' ||
+        manager.currentNode.id == 'mood_calm_detected' ||
+        manager.currentNode.id == 'mood_sad_detected' ||
+        manager.currentNode.id == 'mood_angry_detected' ||
+        manager.currentNode.id == 'mood_distressed_detected';
+
     if (manager.currentModule == VuiModule.mood && 
-        manager.currentNode.id == 'mood_anxious_detected' && 
+        isEmotionNode && 
         manager.detectedEmotion.isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),

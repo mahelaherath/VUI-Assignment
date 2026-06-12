@@ -27,6 +27,15 @@ class VuiStateManager extends ChangeNotifier {
   String _detectedEmotion = '';
   String _detectedIntensity = '';
 
+  // Mood labels and selection
+  static const List<String> moodLabels = ['Happy', 'Calm', 'Sad', 'Angry', 'Distressed'];
+  int _selectedEmojiIndex = 0;
+
+  // Dynamic weekly mood values & days
+  List<double> _weekValues = [0.40, 0.70, 0.60, 1.0, 0.50, 0.20, 0.10];
+  List<String> _weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  int _highlightIndex = 3;
+
   // Breathing state
   String _breathingPhase = 'Inhale';
   int _breathingCycle = 1;
@@ -52,6 +61,23 @@ class VuiStateManager extends ChangeNotifier {
   String get speechText => _speechText;
   String get detectedEmotion => _detectedEmotion;
   String get detectedIntensity => _detectedIntensity;
+  int get selectedEmojiIndex => _selectedEmojiIndex;
+  List<double> get weekValues => _weekValues;
+  List<String> get weekDays => _weekDays;
+  int get highlightIndex => _highlightIndex;
+
+  void selectEmoji(int index) {
+    if (index >= 0 && index < moodLabels.length) {
+      _selectedEmojiIndex = index;
+      submitSimulatedSpeech(moodLabels[index]);
+    }
+  }
+
+  void _shiftWeeklyChart(double newValue) {
+    _weekValues = [..._weekValues.sublist(1), newValue];
+    _weekDays = [..._weekDays.sublist(1), _weekDays[0]];
+    _highlightIndex = 6;
+  }
   String get breathingPhase => _breathingPhase;
   int get breathingCycle => _breathingCycle;
   int get maxCycles => _maxCycles;
@@ -314,19 +340,45 @@ class VuiStateManager extends ChangeNotifier {
       // Emotion detection on mood screen
       if (_currentNode.id == 'mood_start') {
         final lower = text.toLowerCase();
-        if (lower.contains('anxious') ||
-            lower.contains('exam') ||
-            lower.contains('stress')) {
-          _detectedEmotion = 'Anxious';
-          _detectedIntensity = 'Medium';
-        } else if (lower.contains('sad') || lower.contains('depressed')) {
-          _detectedEmotion = 'Sad';
-          _detectedIntensity = 'High';
-        } else if (lower.contains('good') ||
-            lower.contains('happy') ||
-            lower.contains('fine')) {
+        if (lower.contains('happy')) {
           _detectedEmotion = 'Happy';
           _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 0;
+          _shiftWeeklyChart(0.95);
+        } else if (lower.contains('calm')) {
+          _detectedEmotion = 'Calm';
+          _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 1;
+          _shiftWeeklyChart(0.80);
+        } else if (lower.contains('sad')) {
+          _detectedEmotion = 'Sad';
+          _detectedIntensity = 'Medium';
+          _selectedEmojiIndex = 2;
+          _shiftWeeklyChart(0.35);
+        } else if (lower.contains('angry')) {
+          _detectedEmotion = 'Angry';
+          _detectedIntensity = 'High';
+          _selectedEmojiIndex = 3;
+          _shiftWeeklyChart(0.55);
+        } else if (lower.contains('distressed')) {
+          _detectedEmotion = 'Distressed';
+          _detectedIntensity = 'High';
+          _selectedEmojiIndex = 4;
+          _shiftWeeklyChart(0.15);
+        } else if (lower.contains('anxious') ||
+            lower.contains('exam') ||
+            lower.contains('stress') ||
+            lower.contains('nervous')) {
+          _detectedEmotion = 'Anxious';
+          _detectedIntensity = 'Medium';
+          _shiftWeeklyChart(0.40);
+        } else if (lower.contains('good') ||
+            lower.contains('fine') ||
+            lower.contains('great')) {
+          _detectedEmotion = 'Happy';
+          _detectedIntensity = 'Low';
+          _selectedEmojiIndex = 0;
+          _shiftWeeklyChart(0.95);
         } else {
           _detectedEmotion = 'Neutral';
           _detectedIntensity = 'Low';
