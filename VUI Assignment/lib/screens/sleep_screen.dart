@@ -86,52 +86,13 @@ class SleepScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Tonight's",
-                            style: GoogleFonts.dmSans(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            'routine',
-                            style: GoogleFonts.dmSans(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: color.withOpacity(0.4), width: 1.2),
-                        ),
-                        child: Text(
-                          mgr.bedtimeRoutine.replaceAll(' ', '\n'),
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.dmSans(
-                            color: color,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            height: 1.25,
-                          ),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    "Tonight's routine",
+                    style: GoogleFonts.dmSans(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   ...List.generate(_tips.length, (i) {
@@ -140,7 +101,7 @@ class SleepScreen extends StatelessWidget {
                         _SleepTipRow(tip: _tips[i], color: color, index: i),
                         if (i < _tips.length - 1)
                           Divider(
-                            color: Colors.white.withOpacity(0.05),
+                            color: Colors.white.withValues(alpha: 0.05),
                             height: 1,
                             thickness: 1,
                           ),
@@ -154,59 +115,78 @@ class SleepScreen extends StatelessWidget {
             const SizedBox(height: 16),
 
             // ── Last night stats ─────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16181E),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Last night',
-                        style: GoogleFonts.dmSans(
-                          color: Colors.white38,
-                          fontSize: 12,
+            GestureDetector(
+              onTap: () async {
+                int currentHours = mgr.sleepHours;
+                int currentMinutes = mgr.sleepMinutes;
+                await showDialog(
+                  context: context,
+                  builder: (context) {
+                    return _SleepDurationDialog(
+                      initialHours: currentHours,
+                      initialMinutes: currentMinutes,
+                      color: color,
+                      onSave: (h, m) {
+                        mgr.updateSleepTime(h, m);
+                      },
+                    );
+                  },
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF16181E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Last night',
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white38,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${mgr.sleepHours}h\n${mgr.sleepMinutes}m',
-                        style: GoogleFonts.dmSans(
-                          color: color,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
+                        const SizedBox(height: 5),
+                        Text(
+                          '${mgr.sleepHours}h\n${mgr.sleepMinutes}m',
+                          style: GoogleFonts.dmSans(
+                            color: color,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'Quality',
-                        style: GoogleFonts.dmSans(
-                          color: Colors.white38,
-                          fontSize: 12,
+                      ],
+                    ),
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Quality',
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white38,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        mgr.sleepQuality,
-                        style: GoogleFonts.dmSans(
-                          color: mgr.sleepQualityColor,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w700,
+                        const SizedBox(height: 5),
+                        Text(
+                          mgr.sleepQuality,
+                          style: GoogleFonts.dmSans(
+                            color: mgr.sleepQualityColor,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -262,7 +242,7 @@ class _SleepTipRow extends StatelessWidget {
               height: 26,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
-                color: done ? color.withOpacity(0.15) : Colors.transparent,
+                color: done ? color.withValues(alpha: 0.15) : Colors.transparent,
                 border: Border.all(
                   color: done ? color : Colors.white24,
                   width: 1.5,
@@ -329,7 +309,7 @@ class _ScreenHeader extends StatelessWidget {
           height: 34,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.55), width: 1.5),
+            border: Border.all(color: color.withValues(alpha: 0.55), width: 1.5),
           ),
           child: Icon(icon, color: color, size: 18),
         ),
@@ -340,6 +320,118 @@ class _ScreenHeader extends StatelessWidget {
             color: Colors.white,
             fontSize: 22,
             fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── SLEEP DURATION DIALOG ───────────────────────────────────────────────────
+
+class _SleepDurationDialog extends StatefulWidget {
+  final int initialHours;
+  final int initialMinutes;
+  final Color color;
+  final Function(int, int) onSave;
+
+  const _SleepDurationDialog({
+    required this.initialHours,
+    required this.initialMinutes,
+    required this.color,
+    required this.onSave,
+  });
+
+  @override
+  State<_SleepDurationDialog> createState() => _SleepDurationDialogState();
+}
+
+class _SleepDurationDialogState extends State<_SleepDurationDialog> {
+  late int _hours;
+  late int _minutes;
+
+  @override
+  void initState() {
+    super.initState();
+    _hours = widget.initialHours;
+    _minutes = widget.initialMinutes;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF16181E),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Text(
+        'Log Sleep Time',
+        style: GoogleFonts.dmSans(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      content: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Hours dropdown
+          DropdownButton<int>(
+            dropdownColor: const Color(0xFF1E1F22),
+            value: _hours,
+            style: GoogleFonts.dmSans(color: Colors.white, fontSize: 18),
+            items: List.generate(25, (i) {
+              return DropdownMenuItem<int>(
+                value: i,
+                child: Text('$i hrs'),
+              );
+            }),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _hours = val;
+                });
+              }
+            },
+          ),
+          const SizedBox(width: 20),
+          // Minutes dropdown
+          DropdownButton<int>(
+            dropdownColor: const Color(0xFF1E1F22),
+            value: _minutes,
+            style: GoogleFonts.dmSans(color: Colors.white, fontSize: 18),
+            items: List.generate(60, (i) {
+              return DropdownMenuItem<int>(
+                value: i,
+                child: Text('$i mins'),
+              );
+            }),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _minutes = val;
+                });
+              }
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: GoogleFonts.dmSans(color: Colors.white38),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            widget.onSave(_hours, _minutes);
+            Navigator.pop(context);
+          },
+          child: Text(
+            'Save',
+            style: GoogleFonts.dmSans(color: widget.color),
           ),
         ),
       ],

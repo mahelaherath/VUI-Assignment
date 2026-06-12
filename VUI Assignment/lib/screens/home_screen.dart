@@ -45,7 +45,7 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   // ── Greeting ─────────────────────────────────────
                   Text(
-                    'Good morning',
+                    _getGreeting(),
                     style: GoogleFonts.dmSans(
                       color: Colors.white54,
                       fontSize: 14,
@@ -133,10 +133,6 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ]),
 
-                  const SizedBox(height: 12),
-
-                  // ── Streak card ──────────────────────────────────
-                  _StreakCard(),
                 ],
               ),
             ),
@@ -144,6 +140,19 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) {
+      return 'Good morning';
+    } else if (hour >= 12 && hour < 17) {
+      return 'Good afternoon';
+    } else if (hour >= 17 && hour < 22) {
+      return 'Good evening';
+    } else {
+      return 'Good night';
+    }
   }
 
   String _orbLabel(VuiState state) {
@@ -229,68 +238,4 @@ class _ModuleCard extends StatelessWidget {
   }
 }
 
-// ─── STREAK CARD ─────────────────────────────────────────────────────────────
 
-class _StreakCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16181E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: VuiTheme.moodColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: VuiTheme.moodColor.withOpacity(0.3),
-                width: 1.2,
-              ),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.local_fire_department_rounded,
-                color: Color(0xFFFFB74D),
-                size: 22,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Streak',
-                style: GoogleFonts.dmSans(
-                  color: Colors.white38,
-                  fontSize: 11,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Text(
-                    '4 days in a row',
-                    style: GoogleFonts.dmSans(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text('🔥', style: TextStyle(fontSize: 16)),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
