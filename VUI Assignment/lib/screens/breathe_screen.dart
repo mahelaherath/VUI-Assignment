@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../vui/vui_theme.dart';
 import '../vui/vui_state_manager.dart';
+import '../vui/dialogue_engine.dart';
 import '../widgets/sera_orb.dart';
 
 // ─── BREATHING SCREEN ────────────────────────────────────────────────────────
@@ -126,6 +127,7 @@ class _BreatheScreenState extends State<BreatheScreen>
 
   void _pauseLocal() {
     _timer?.cancel();
+    _circle.stop();
     setState(() => _running = false);
   }
 
@@ -140,7 +142,11 @@ class _BreatheScreenState extends State<BreatheScreen>
   }
 
   void _start() {
-    _vui.startBreathingExercise(); // Will trigger _onVuiChanged
+    if (_phase != _Phase.ready && _vui.breathingCycle <= _vui.maxCycles) {
+      _vui.resumeBreathingExercise(); // Will trigger _onVuiChanged
+    } else {
+      _vui.startBreathingExercise(); // Will trigger _onVuiChanged
+    }
   }
 
   void _pause() {
@@ -195,7 +201,7 @@ class _BreatheScreenState extends State<BreatheScreen>
 
   void _runCountdown(int secs, VoidCallback onDone) {
     _timer?.cancel();
-    int remaining = secs;
+    int remaining = secs - 1;
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) {
         t.cancel();
@@ -381,43 +387,90 @@ class _BreatheScreenState extends State<BreatheScreen>
 
             const SizedBox(height: 28),
 
-            // ── Orb (play / pause) ───────────────────────────────
-            Center(
-              child: SeraOrb(
-                color: color,
-                orbSize: 60,
-                icon: _running
-                    ? Icons.pause_rounded
-                    : (_phase == _Phase.ready
-                        ? Icons.play_arrow_rounded
-                        : Icons.play_arrow_rounded),
-                isActive: _running,
-                onTap: () {
-                  if (_phase == _Phase.ready) {
-                    _start();
-                  } else if (_running) {
-                    _pause();
-                  } else {
-                    _start();
-                  }
-                },
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            Center(
-              child: Text(
-                _running
-                    ? 'Voice-guided, tap to pause'
-                    : _phase == _Phase.ready
-                        ? 'Tap to start'
-                        : 'Paused — tap to resume',
-                style: GoogleFonts.dmSans(
-                  color: Colors.white38,
-                  fontSize: 13,
+            // ── Controls (Play/Pause & Tap to Speak) ─────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Play / Pause Orb
+                Column(
+                  children: [
+                    SeraOrb(
+                      color: color,
+                      orbSize: 60,
+                      icon: _running
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      isActive: _running,
+                      onTap: () {
+                        if (_phase == _Phase.ready) {
+                          _start();
+                        } else if (_running) {
+                          _pause();
+                        } else {
+                          _start();
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _running ? 'Pause' : 'Start',
+                      style: GoogleFonts.dmSans(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+
+                const SizedBox(width: 40),
+
+                // Tap to speak button
+                Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        if (_vui.state == VuiState.listening) {
+                          _vui.stopListening();
+                        } else {
+                          _vui.startListening();
+                        }
+                      },
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: _vui.state == VuiState.listening ? color : const Color(0xFF1E1F22),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _vui.state == VuiState.listening ? color : Colors.white24,
+                            width: 1.5,
+                          ),
+                          boxShadow: _vui.state == VuiState.listening ? [
+                            BoxShadow(
+                              color: color.withOpacity(0.4),
+                              blurRadius: 14,
+                              spreadRadius: 2,
+                            )
+                          ] : [],
+                        ),
+                        child: Icon(
+                          Icons.mic,
+                          color: _vui.state == VuiState.listening ? Colors.black : Colors.white70,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _vui.state == VuiState.listening ? 'Listening...' : 'Tap to speak',
+                      style: GoogleFonts.dmSans(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
 
             const SizedBox(height: 22),

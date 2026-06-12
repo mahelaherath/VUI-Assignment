@@ -375,7 +375,11 @@ class _VUIConversationScreenState
                       if (manager.currentModule ==
                           VuiModule.breathing) {
                         if (!manager.isBreathingActive) {
-                          manager.startBreathingExercise();
+                          if (manager.breathingCycle <= manager.maxCycles) {
+                            manager.resumeBreathingExercise();
+                          } else {
+                            manager.startBreathingExercise();
+                          }
                         }
                       } else {
                         manager.startListening();

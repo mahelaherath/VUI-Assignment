@@ -576,7 +576,24 @@ class VuiStateManager extends ChangeNotifier {
       return;
     }
 
-    // ── 3. Navigation commands ──────────────────────────────────────────────
+    // ── 3. Breathing exercise controls and specific intents ──────────────────
+    if (_matchesNav(lower, ['start', 'begin', 'start breathing', 'begin breathing'])) {
+      startBreathingExercise();
+      return;
+    }
+    if (_matchesNav(lower, ['stop', 'pause', 'stop breathing', 'pause breathing'])) {
+      pauseBreathing();
+      _speakSera("Exercise paused. Tap the orb or say 'start' to continue.");
+      return;
+    }
+    if (lower.contains('belly breathing') || lower.contains('box breathing') || lower.contains('4-7-8')) {
+      if (nav.currentIndex != 2) nav.navigateTo(2);
+      _currentModule = VuiModule.breathing;
+      _processDialogue(text);
+      return;
+    }
+
+    // ── 4. Navigation commands ──────────────────────────────────────────────
     if (_matchesNav(lower, ['home', 'go home', 'main screen', 'main'])) {
       nav.navigateTo(0);
       _speakSera("Going to Home.");
@@ -614,17 +631,6 @@ class VuiStateManager extends ChangeNotifier {
       _currentModule = VuiModule.crisis;
       _currentNode = _engine.getNode('crisis_start');
       _speakSera("I've opened the emergency contacts page. Say 'call' to dial the hotline.");
-      return;
-    }
-
-    // ── 3. Breathing exercise controls ─────────────────────────────────────
-    if (_matchesNav(lower, ['start', 'begin', 'start breathing', 'begin breathing'])) {
-      startBreathingExercise();
-      return;
-    }
-    if (_matchesNav(lower, ['stop', 'pause', 'stop breathing', 'pause breathing'])) {
-      pauseBreathing();
-      _speakSera("Exercise paused. Tap the orb or say 'start' to continue.");
       return;
     }
 
@@ -1090,6 +1096,15 @@ class VuiStateManager extends ChangeNotifier {
     _breathingTimer?.cancel();
     _tts.stop();
     _setState(VuiState.idle);
+  }
+
+  void resumeBreathingExercise() {
+    if (_isBreathingActive) return;
+    _setState(VuiState.guiding);
+    _isBreathingActive = true;
+    _breathingPhase = 'Inhale';
+    notifyListeners();
+    _runBreathingCycle();
   }
 
   void stopBreathing() {
