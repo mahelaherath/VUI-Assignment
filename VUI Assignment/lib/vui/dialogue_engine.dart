@@ -176,7 +176,15 @@ class DialogueEngine {
       // --- BREATHING EXERCISE FLOW ---
       'breathing_intro': DialogueNode(
         id: 'breathing_intro',
-        text: "Great. Let's do the 4-7-8 technique together. I'll count for you — just follow my voice. Close your eyes when you're ready.",
+        text: "Great. Which breathing exercise would you like to do? We have 4-7-8, Box, or Belly breathing.",
+        chips: ["4-7-8", "Box", "Belly"],
+        next: (input) {
+           return 'breathing_ready';
+        }
+      ),
+      'breathing_ready': DialogueNode(
+        id: 'breathing_ready',
+        text: "I'll count for you — just follow my voice. Close your eyes and say 'start' when you're ready.",
         chips: ["Start", "Go back"],
       ),
 

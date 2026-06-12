@@ -59,6 +59,7 @@ class VuiStateManager extends ChangeNotifier {
   List<bool> _routineChecklist = [false, false, false];
 
   // Breathing state
+  String _breathingTechnique = '4-7-8';
   String _breathingPhase = 'Inhale';
   int _breathingCycle = 1;
   final int _maxCycles = 4;
@@ -404,10 +405,19 @@ class VuiStateManager extends ChangeNotifier {
 
     return "Tonight's routine updated.";
   }
+  String get breathingTechnique => _breathingTechnique;
   String get breathingPhase => _breathingPhase;
   int get breathingCycle => _breathingCycle;
   int get maxCycles => _maxCycles;
   bool get isBreathingActive => _isBreathingActive;
+
+  void updateBreathingTechnique(String technique) {
+    if (_breathingTechnique != technique) {
+      stopBreathing();
+      _breathingTechnique = technique;
+      notifyListeners();
+    }
+  }
 
   // ── Constructor ───────────────────────────────────────────────────────────
   VuiStateManager() {
@@ -795,6 +805,61 @@ class VuiStateManager extends ChangeNotifier {
         return;
       }
 
+      if (_currentModule == VuiModule.breathing) {
+        bool isQuestion = lower.contains('what is') || lower.contains('explain') || lower.contains('describe') || lower.contains('tell me about') || lower.contains('how to');
+        
+        if (isQuestion) {
+          if (lower.contains('belly')) {
+            updateBreathingTechnique('Belly');
+            _speakSera("Belly Breathing is also called diaphragmatic breathing. The goal is to breathe deeply into the belly rather than shallowly into the chest. It's best for deep relaxation and lowering heart rate.");
+            return;
+          }
+          if (lower.contains('box')) {
+            updateBreathingTechnique('Box');
+            _speakSera("Box breathing involves four equal steps: inhale for 4 seconds, hold for 4 seconds, exhale for 4 seconds, and hold empty for 4 seconds. It's best for clearing the mind and resetting focus.");
+            return;
+          }
+          if (lower.contains('4-7-8') || lower.contains('4 7 8')) {
+            updateBreathingTechnique('4-7-8');
+            _speakSera("4-7-8 Breathing is a natural tranquilizer for the nervous system. You inhale for 4 seconds, hold for 7 seconds, and exhale completely for 8 seconds. It's best for insomnia and fast stress relief.");
+            return;
+          }
+        }
+
+        bool isSelection = _currentNode.id == 'breathing_intro';
+
+        if (lower.contains('belly breathing') || (lower.contains('belly') && (isSelection || lower.contains('breath') || lower.contains('technique')))) {
+          updateBreathingTechnique('Belly');
+          if (isSelection) {
+            _currentNode = _engine.getNode('breathing_ready');
+            _speakSera("Switched to Belly breathing. Say 'start' when you're ready.");
+          } else {
+            _speakSera("Switched to Belly breathing.");
+          }
+          return;
+        }
+        if (lower.contains('box breathing') || (lower.contains('box') && (isSelection || lower.contains('breath') || lower.contains('technique')))) {
+          updateBreathingTechnique('Box');
+          if (isSelection) {
+            _currentNode = _engine.getNode('breathing_ready');
+            _speakSera("Switched to Box breathing. Say 'start' when you're ready.");
+          } else {
+            _speakSera("Switched to Box breathing.");
+          }
+          return;
+        }
+        if (lower.contains('4-7-8') || lower.contains('4 7 8')) {
+          updateBreathingTechnique('4-7-8');
+          if (isSelection) {
+            _currentNode = _engine.getNode('breathing_ready');
+            _speakSera("Switched to 4-7-8 breathing. Say 'start' when you're ready.");
+          } else {
+            _speakSera("Switched to 4-7-8 breathing.");
+          }
+          return;
+        }
+      }
+
       // Emotion detection on mood screen (standard path fallback)
       if (_currentNode.id == 'mood_start') {
         if (lower.contains('happy')) {
@@ -951,26 +1016,66 @@ class VuiStateManager extends ChangeNotifier {
 
     _breathingPhase = 'Inhale';
     notifyListeners();
-    _speakVoiceGuidance('Inhale slowly through your nose… 1… 2… 3… 4…');
+    
+    int inhaleS = 4;
+    int hold1S = 7;
+    int exhaleS = 8;
+    int hold2S = 0;
 
-    _breathingTimer = Timer(const Duration(seconds: 4), () {
+    if (_breathingTechnique == 'Box') {
+      inhaleS = 4;
+      hold1S = 4;
+      exhaleS = 4;
+      hold2S = 4;
+    } else if (_breathingTechnique == 'Belly') {
+      inhaleS = 5;
+      hold1S = 0;
+      exhaleS = 5;
+      hold2S = 0;
+    }
+
+    String _buildCount(int n) => List.generate(n, (i) => '${i+1}…').join(' ');
+
+    _speakVoiceGuidance('Inhale… ${_buildCount(inhaleS)}');
+
+    _breathingTimer = Timer(Duration(seconds: inhaleS), () {
       if (!_isBreathingActive) return;
-      _breathingPhase = 'Hold';
-      notifyListeners();
-      _speakVoiceGuidance('Hold… 1… 2… 3… 4… 5… 6… 7…');
-
-      _breathingTimer = Timer(const Duration(seconds: 7), () {
+      
+      void afterHold1() {
         if (!_isBreathingActive) return;
         _breathingPhase = 'Exhale';
         notifyListeners();
-        _speakVoiceGuidance('Exhale slowly… 1… 2… 3… 4… 5… 6… 7… 8…');
+        _speakVoiceGuidance('Exhale… ${_buildCount(exhaleS)}');
 
-        _breathingTimer = Timer(const Duration(seconds: 8), () {
+        _breathingTimer = Timer(Duration(seconds: exhaleS), () {
           if (!_isBreathingActive) return;
-          _breathingCycle++;
-          _runBreathingCycle();
+          
+          if (hold2S > 0) {
+            _breathingPhase = 'Hold';
+            notifyListeners();
+            _speakVoiceGuidance('Hold… ${_buildCount(hold2S)}');
+            _breathingTimer = Timer(Duration(seconds: hold2S), () {
+              if (!_isBreathingActive) return;
+              _breathingCycle++;
+              _runBreathingCycle();
+            });
+          } else {
+            _breathingCycle++;
+            _runBreathingCycle();
+          }
         });
-      });
+      }
+
+      if (hold1S > 0) {
+        _breathingPhase = 'Hold';
+        notifyListeners();
+        _speakVoiceGuidance('Hold… ${_buildCount(hold1S)}');
+        _breathingTimer = Timer(Duration(seconds: hold1S), () {
+          afterHold1();
+        });
+      } else {
+        afterHold1();
+      }
     });
   }
 

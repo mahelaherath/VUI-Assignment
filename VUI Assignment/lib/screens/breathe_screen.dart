@@ -21,16 +21,15 @@ class BreatheScreen extends StatefulWidget {
 
 class _BreatheScreenState extends State<BreatheScreen>
     with SingleTickerProviderStateMixin {
-  _Technique _tech = _Technique.t478;
   _Phase _phase = _Phase.ready;
   bool _running = false;
   int _countdownVal = 4;
-  int _cycle = 0;
-  static const _totalCycles = 3;
   Timer? _timer;
 
   late final AnimationController _circle;
   late Animation<double> _scale;
+  late VuiStateManager _vui;
+  String _lastTechStr = '';
 
   @override
   void initState() {
@@ -42,13 +41,45 @@ class _BreatheScreenState extends State<BreatheScreen>
     _scale = Tween<double>(begin: 0.72, end: 1.0).animate(
       CurvedAnimation(parent: _circle, curve: Curves.easeInOut),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _vui = Provider.of<VuiStateManager>(context, listen: false);
+      _lastTechStr = _vui.breathingTechnique;
+      _vui.addListener(_onVuiChanged);
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     _circle.dispose();
+    _vui.removeListener(_onVuiChanged);
     super.dispose();
+  }
+
+  void _onVuiChanged() {
+    if (!mounted) return;
+    
+    // Technique changed from anywhere (UI or Voice)
+    if (_lastTechStr != _vui.breathingTechnique) {
+      _lastTechStr = _vui.breathingTechnique;
+      _resetLocal();
+    }
+
+    // Play state changed from Voice
+    if (_vui.isBreathingActive && !_running) {
+       _startLocal();
+    } else if (!_vui.isBreathingActive && _running) {
+       _pauseLocal();
+    }
+  }
+
+  _Technique get _tech {
+    final t = Provider.of<VuiStateManager>(context).breathingTechnique;
+    if (t == 'Box') return _Technique.box;
+    if (t == 'Belly') return _Technique.belly;
+    return _Technique.t478;
   }
 
   // ── Timing per technique ─────────────────────────────────────────────────
@@ -88,41 +119,44 @@ class _BreatheScreenState extends State<BreatheScreen>
 
   // ── Control ──────────────────────────────────────────────────────────────
 
-  void _start() {
-    if (_cycle == 0) {
-      setState(() {
-        _running = true;
-        _cycle = 1;
-      });
-    } else {
-      setState(() => _running = true);
-    }
+  void _startLocal() {
+    setState(() => _running = true);
     _doInhale();
-    Provider.of<VuiStateManager>(context, listen: false)
-        .startBreathingExercise();
   }
 
-  void _pause() {
+  void _pauseLocal() {
     _timer?.cancel();
     setState(() => _running = false);
-    Provider.of<VuiStateManager>(context, listen: false).pauseBreathing();
   }
 
-  void _reset() {
+  void _resetLocal() {
     _timer?.cancel();
     _circle.reverse();
     setState(() {
       _running = false;
       _phase = _Phase.ready;
-      _cycle = 0;
       _countdownVal = _inhaleS;
     });
-    Provider.of<VuiStateManager>(context, listen: false).stopBreathing();
+  }
+
+  void _start() {
+    _vui.startBreathingExercise(); // Will trigger _onVuiChanged
+  }
+
+  void _pause() {
+    _vui.pauseBreathing(); // Will trigger _onVuiChanged
+  }
+
+  void _reset() {
+    _vui.stopBreathing(); // Will trigger _onVuiChanged
+    _resetLocal();
   }
 
   void _changeTech(_Technique t) {
-    _reset();
-    setState(() => _tech = t);
+    String tStr = '4-7-8';
+    if (t == _Technique.box) tStr = 'Box';
+    if (t == _Technique.belly) tStr = 'Belly';
+    _vui.updateBreathingTechnique(tStr); // Will trigger _onVuiChanged
   }
 
   // ── Phase runners ─────────────────────────────────────────────────────────
@@ -154,12 +188,8 @@ class _BreatheScreenState extends State<BreatheScreen>
     });
     _runCountdown(_exhaleS, () {
       if (!_running) return;
-      if (_cycle < _totalCycles) {
-        setState(() => _cycle++);
-        _doInhale();
-      } else {
-        _reset();
-      }
+      // Cycle logic is handled by VuiStateManager, local UI just loops
+      _doInhale();
     });
   }
 
@@ -257,6 +287,11 @@ class _BreatheScreenState extends State<BreatheScreen>
                 ),
               ],
             ),
+
+            const SizedBox(height: 24),
+
+            // ── Technique Description ─────────────────────────────
+            _buildDescriptionCard(color),
 
             const SizedBox(height: 36),
 
@@ -409,9 +444,9 @@ class _BreatheScreenState extends State<BreatheScreen>
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: _cycle == 0
+                      value: !_running
                           ? 0.0
-                          : _cycle / _totalCycles,
+                          : _vui.breathingCycle / _vui.maxCycles,
                       minHeight: 6,
                       backgroundColor: Colors.white12,
                       valueColor: AlwaysStoppedAnimation<Color>(color),
@@ -419,9 +454,9 @@ class _BreatheScreenState extends State<BreatheScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _cycle == 0
+                    !_running
                         ? 'Ready to begin'
-                        : 'Cycle $_cycle of $_totalCycles · ~${(_totalCycles - _cycle + 1)} min remaining',
+                        : 'Cycle ${_vui.breathingCycle} of ${_vui.maxCycles} · ~${(_vui.maxCycles - _vui.breathingCycle + 1)} min remaining',
                     style: GoogleFonts.dmSans(
                       color: Colors.white38,
                       fontSize: 12,
@@ -432,6 +467,79 @@ class _BreatheScreenState extends State<BreatheScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDescriptionCard(Color color) {
+    String title = "";
+    String description = "";
+    String bestFor = "";
+
+    switch (_tech) {
+      case _Technique.t478:
+        title = "The Nervous System Resetter";
+        description = "A natural tranquilizer for the nervous system. You inhale quietly through your nose for 4 seconds, hold your breath for 7 seconds, and exhale completely through your mouth making a \"whoosh\" sound for 8 seconds.";
+        bestFor = "Insomnia, high anxiety, and fast stress relief.";
+        break;
+      case _Technique.box:
+        title = "Four-Square Breathing";
+        description = "It involves four equal steps: inhale for 4 seconds, hold for 4 seconds, exhale for 4 seconds, and hold empty for 4 seconds.";
+        bestFor = "Clearing the mind, grounding yourself, and resetting focus (frequently used by athletes and Navy SEALs).";
+        break;
+      case _Technique.belly:
+        title = "The Foundation";
+        description = "Also called diaphragmatic breathing. The goal is to breathe deeply into the belly rather than shallowly into the chest. You place one hand on your chest and one on your belly, ensuring the belly moves outward on the inhale and drops inward on the exhale.";
+        bestFor = "Deep relaxation, lowering heart rate, and training proper daily breathing mechanics.";
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16181E),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.dmSans(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: GoogleFonts.dmSans(
+              color: Colors.white70,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Best For:",
+            style: GoogleFonts.dmSans(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            bestFor,
+            style: GoogleFonts.dmSans(
+              color: Colors.white54,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }

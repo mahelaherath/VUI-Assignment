@@ -238,5 +238,37 @@ void main() {
         expect(dbMoods, isEmpty);
       });
     });
+
+    group('VuiStateManager Breathing Exercise Tests', () {
+      test('Initial breathing technique is 4-7-8', () {
+        expect(stateManager.breathingTechnique, equals('4-7-8'));
+      });
+
+      test('updateBreathingTechnique updates correctly', () {
+        stateManager.updateBreathingTechnique('Box');
+        expect(stateManager.breathingTechnique, equals('Box'));
+
+        stateManager.updateBreathingTechnique('Belly');
+        expect(stateManager.breathingTechnique, equals('Belly'));
+      });
+
+      test('Voice commands select breathing techniques correctly', () {
+        fakeAsync((async) {
+          stateManager.transitionToModule(VuiModule.breathing);
+
+          stateManager.submitSimulatedSpeech('change to belly breathing');
+          async.elapse(const Duration(milliseconds: 1500));
+          expect(stateManager.breathingTechnique, equals('Belly'));
+
+          stateManager.submitSimulatedSpeech('select box breathing');
+          async.elapse(const Duration(milliseconds: 1500));
+          expect(stateManager.breathingTechnique, equals('Box'));
+
+          stateManager.submitSimulatedSpeech('4-7-8 breathing technique');
+          async.elapse(const Duration(milliseconds: 1500));
+          expect(stateManager.breathingTechnique, equals('4-7-8'));
+        });
+      });
+    });
   });
 }
