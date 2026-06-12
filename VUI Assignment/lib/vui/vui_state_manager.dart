@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dialogue_engine.dart';
+import 'vui_theme.dart';
 import 'navigation_notifier.dart';
 
 class VuiStateManager extends ChangeNotifier {
@@ -35,6 +36,12 @@ class VuiStateManager extends ChangeNotifier {
   List<double> _weekValues = [0.40, 0.70, 0.60, 1.0, 0.50, 0.20, 0.10];
   List<String> _weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   int _highlightIndex = 3;
+
+  // Sleep tracking state
+  int _sleepHours = 6;
+  int _sleepMinutes = 40;
+  String _sleepQuality = "Fair";
+  Color _sleepQualityColor = VuiTheme.moodColor;
 
   // Breathing state
   String _breathingPhase = 'Inhale';
@@ -77,6 +84,90 @@ class VuiStateManager extends ChangeNotifier {
     _weekValues = [..._weekValues.sublist(1), newValue];
     _weekDays = [..._weekDays.sublist(1), _weekDays[0]];
     _highlightIndex = 6;
+  }
+
+  int get sleepHours => _sleepHours;
+  int get sleepMinutes => _sleepMinutes;
+  String get sleepQuality => _sleepQuality;
+  Color get sleepQualityColor => _sleepQualityColor;
+
+  void updateSleepTime(int hours, int minutes) {
+    _sleepHours = hours;
+    _sleepMinutes = minutes;
+    
+    final totalHours = hours + (minutes / 60.0);
+    if (totalHours < 6.0) {
+      _sleepQuality = "Poor";
+      _sleepQualityColor = VuiTheme.crisisColor;
+    } else if (totalHours <= 7.5) {
+      _sleepQuality = "Fair";
+      _sleepQualityColor = VuiTheme.moodColor;
+    } else {
+      _sleepQuality = "Good";
+      _sleepQualityColor = VuiTheme.breathingColor;
+    }
+    notifyListeners();
+  }
+
+  bool _isReportingSleepTime(String text) {
+    final lower = text.toLowerCase();
+    final sleepTimeRegExp = RegExp(r'\b(sleep|slept|hours|hrs|hr|h|minutes|mins|m)\b');
+    final numberRegExp = RegExp(r'\d+');
+    return sleepTimeRegExp.hasMatch(lower) && numberRegExp.hasMatch(lower);
+  }
+
+  void _parseAndSetSleepTime(String text) {
+    final lower = text.toLowerCase().trim();
+    int hours = 0;
+    int minutes = 0;
+    bool matched = false;
+
+    // Try to match decimals first: e.g. "7.5 hours", "6.5h"
+    final decimalRegExp = RegExp(r'(\d+(?:\.\d+)?)\s*(?:hour|hr|h)\b');
+    final decimalMatch = decimalRegExp.firstMatch(lower);
+    if (decimalMatch != null) {
+      final val = double.tryParse(decimalMatch.group(1) ?? '');
+      if (val != null) {
+        hours = val.floor();
+        minutes = ((val - hours) * 60).round();
+        matched = true;
+      }
+    }
+
+    if (!matched) {
+      // Try to match hours and minutes: e.g. "7 hours and 30 minutes", "6h 40m"
+      final hoursRegExp = RegExp(r'(\d+)\s*(?:hour|hr|h)\b');
+      final minutesRegExp = RegExp(r'(\d+)\s*(?:minute|min|m)\b');
+      
+      final hoursMatch = hoursRegExp.firstMatch(lower);
+      final minutesMatch = minutesRegExp.firstMatch(lower);
+
+      if (hoursMatch != null) {
+        hours = int.tryParse(hoursMatch.group(1) ?? '') ?? 0;
+        matched = true;
+      }
+      if (minutesMatch != null) {
+        minutes = int.tryParse(minutesMatch.group(1) ?? '') ?? 0;
+        matched = true;
+      }
+    }
+
+    // Fallback plain number
+    if (!matched) {
+      final plainNumberRegExp = RegExp(r'\b(\d+)\b');
+      final plainMatch = plainNumberRegExp.firstMatch(lower);
+      if (plainMatch != null) {
+        final val = int.tryParse(plainMatch.group(1) ?? '');
+        if (val != null && val > 0 && val <= 24) {
+          hours = val;
+          matched = true;
+        }
+      }
+    }
+
+    if (matched && (hours > 0 || minutes > 0)) {
+      updateSleepTime(hours, minutes);
+    }
   }
   String get breathingPhase => _breathingPhase;
   int get breathingCycle => _breathingCycle;
@@ -402,6 +493,36 @@ class VuiStateManager extends ChangeNotifier {
         }
 
         _currentNode = _engine.getNode(targetNodeId);
+        _speakSera(_currentNode.text);
+        return;
+      }
+
+      if (_currentModule == VuiModule.sleep && _isReportingSleepTime(text)) {
+        _parseAndSetSleepTime(text);
+        final String timeStr = "${_sleepHours}h ${_sleepMinutes}m";
+        String responseText = "I've logged your sleep duration of $timeStr. ";
+        if (_sleepQuality == "Good") {
+          responseText += "That's a great sleep duration! Keep maintaining this healthy routine.";
+        } else if (_sleepQuality == "Fair") {
+          responseText += "That's a fair amount of sleep, but aiming for a bit more can help you feel fully refreshed.";
+        } else {
+          responseText += "That's a bit low for optimal recovery. Try avoiding screens and practicing breathing exercises before bed to sleep longer.";
+        }
+
+        _currentNode = DialogueNode(
+          id: 'sleep_time_logged',
+          text: responseText,
+          chips: ["Breathing exercise", "Sleep tips", "Exit"],
+          next: (input) {
+            if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) {
+              return 'breathing_intro';
+            }
+            if (input.toLowerCase().contains('tip') || input.toLowerCase().contains('hygiene') || input.toLowerCase().contains('sleep')) {
+              return 'sleep_general_advice';
+            }
+            return 'sleep_end';
+          }
+        );
         _speakSera(_currentNode.text);
         return;
       }

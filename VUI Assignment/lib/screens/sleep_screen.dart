@@ -174,7 +174,7 @@ class SleepScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        '6h\n40m',
+                        '${mgr.sleepHours}h\n${mgr.sleepMinutes}m',
                         style: GoogleFonts.dmSans(
                           color: color,
                           fontSize: 30,
@@ -197,9 +197,9 @@ class SleepScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Fair',
+                        mgr.sleepQuality,
                         style: GoogleFonts.dmSans(
-                          color: VuiTheme.moodColor,
+                          color: mgr.sleepQualityColor,
                           fontSize: 30,
                           fontWeight: FontWeight.w700,
                         ),
