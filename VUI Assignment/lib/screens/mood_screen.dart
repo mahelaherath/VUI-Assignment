@@ -133,6 +133,80 @@ class _MoodScreenState extends State<MoodScreen> {
               color: VuiTheme.moodColor,
               highlightIndex: mgr.highlightIndex,
             ),
+
+            const SizedBox(height: 16),
+
+            // ── Weekly mood analysis breakdown ───────────────────
+            _WeeklyAnalysisCard(
+              counts: mgr.weeklyMoodCounts,
+              moodLabels: VuiStateManager.moodLabels,
+              emojis: _emojis,
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Reset weekly data button ──────────────────────────
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: const Color(0xFF16181E),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      title: Text(
+                        'Reset weekly data?',
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      content: Text(
+                        'This will delete all logged mood entries for this week and reset your analytics. This action cannot be undone.',
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.dmSans(color: Colors.white38),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            mgr.resetWeeklyData();
+                            Navigator.pop(context);
+                          },
+                          child: Text(
+                            'Reset',
+                            style: GoogleFonts.dmSans(color: VuiTheme.crisisColor),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: VuiTheme.crisisColor,
+                  size: 18,
+                ),
+                label: Text(
+                  'Reset weekly data',
+                  style: GoogleFonts.dmSans(
+                    color: VuiTheme.crisisColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -331,6 +405,145 @@ class _ScreenHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── WEEKLY MOOD ANALYSIS Breakdown ─────────────────────────────────────────
+
+class _WeeklyAnalysisCard extends StatelessWidget {
+  final Map<String, int> counts;
+  final List<String> moodLabels;
+  final List<String> emojis;
+
+  const _WeeklyAnalysisCard({
+    required this.counts,
+    required this.moodLabels,
+    required this.emojis,
+  });
+
+  Color _getMoodColor(String mood) {
+    switch (mood) {
+      case 'Happy':
+        return const Color(0xFFFBBF24); // Amber
+      case 'Calm':
+        return const Color(0xFF34D399); // Teal
+      case 'Sad':
+        return const Color(0xFF60A5FA); // Blue
+      case 'Angry':
+        return const Color(0xFFF87171); // Red
+      case 'Distressed':
+        return const Color(0xFFF472B6); // Pink
+      default:
+        return VuiTheme.moodColor;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = counts.values.fold<int>(0, (sum, val) => sum + val);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16181E),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Weekly analysis',
+                style: GoogleFonts.dmSans(
+                  color: Colors.white60,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                '$total logs',
+                style: GoogleFonts.dmSans(
+                  color: Colors.white30,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Column(
+            children: List.generate(moodLabels.length, (i) {
+              final mood = moodLabels[i];
+              final emoji = emojis[i];
+              final count = counts[mood] ?? 0;
+              final percent = total > 0 ? (count / total) : 0.0;
+              final moodColor = _getMoodColor(mood);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '$emoji $mood',
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          count == 1 ? '1 log' : '$count logs',
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Stack(
+                      children: [
+                        Container(
+                          height: 6,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2D3A),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: percent,
+                          child: Container(
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: moodColor,
+                              borderRadius: BorderRadius.circular(3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: moodColor.withOpacity(0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }

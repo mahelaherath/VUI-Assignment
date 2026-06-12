@@ -5,6 +5,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../db/database_helper.dart';
 import 'dialogue_engine.dart';
 import 'vui_theme.dart';
 import 'navigation_notifier.dart';
@@ -33,15 +34,29 @@ class VuiStateManager extends ChangeNotifier {
   int _selectedEmojiIndex = 0;
 
   // Dynamic weekly mood values & days
-  List<double> _weekValues = [0.40, 0.70, 0.60, 1.0, 0.50, 0.20, 0.10];
+  List<double> _weekValues = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
   List<String> _weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  int _highlightIndex = 3;
+  int _highlightIndex = 6;
+  double _latestMoodScore = 0.50;
+
+  // Track the occurrences of each mood for analysis
+  Map<String, int> _weeklyMoodCounts = {
+    'Happy': 0,
+    'Calm': 0,
+    'Sad': 0,
+    'Angry': 0,
+    'Distressed': 0,
+  };
 
   // Sleep tracking state
   int _sleepHours = 6;
   int _sleepMinutes = 40;
   String _sleepQuality = "Fair";
   Color _sleepQualityColor = VuiTheme.moodColor;
+
+  // Bedtime routine state
+  String _bedtimeRoutine = "10:30 PM";
+  List<bool> _routineChecklist = [false, false, false];
 
   // Breathing state
   String _breathingPhase = 'Inhale';
@@ -80,10 +95,150 @@ class VuiStateManager extends ChangeNotifier {
     }
   }
 
+  double get latestMoodScore => _latestMoodScore;
+  Map<String, int> get weeklyMoodCounts => _weeklyMoodCounts;
+
   void _shiftWeeklyChart(double newValue) {
+    // Immediate in-memory update for fluid UI feedback
     _weekValues = [..._weekValues.sublist(1), newValue];
-    _weekDays = [..._weekDays.sublist(1), _weekDays[0]];
+    _weekDays = [..._weekDays.sublist(1), _getWeekdayLabel(DateTime.now().weekday)];
     _highlightIndex = 6;
+    _latestMoodScore = newValue;
+    notifyListeners();
+
+    // Async persistent save to DB and complete refresh
+    final moodName = _detectedEmotion.isEmpty ? 'Neutral' : _detectedEmotion;
+    DatabaseHelper.instance.insertMood(moodName, newValue).then((_) {
+      _loadMoodHistoryFromDb();
+    }).catchError((e) {
+      debugPrint("DB save failed: $e");
+    });
+  }
+
+  Future<void> _loadMoodHistoryFromDb() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      
+      // Fetch all mood check-ins sorted chronologically
+      final List<Map<String, dynamic>> allMoods = await db.query(
+        'moods',
+        orderBy: 'timestamp ASC',
+      );
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      // Create lists for the last 7 calendar days (ending with today)
+      final List<double> newValues = List.filled(7, 0.0);
+      final List<String> newDays = List.filled(7, '');
+
+      // Reset mood counts for analytics
+      final Map<String, int> counts = {
+        'Happy': 0,
+        'Calm': 0,
+        'Sad': 0,
+        'Angry': 0,
+        'Distressed': 0,
+      };
+
+      for (int i = 0; i < 7; i++) {
+        final targetDate = today.subtract(Duration(days: 6 - i));
+        newDays[i] = _getWeekdayLabel(targetDate.weekday);
+
+        // Find all check-ins on this specific calendar day
+        final dayMoods = allMoods.where((m) {
+          final timestampStr = m['timestamp'] as String;
+          final date = DateTime.tryParse(timestampStr);
+          if (date == null) return false;
+          return date.year == targetDate.year &&
+                 date.month == targetDate.month &&
+                 date.day == targetDate.day;
+        }).toList();
+
+        if (dayMoods.isNotEmpty) {
+          // Average the mood scores for this day
+          final sum = dayMoods.fold<double>(0.0, (prev, element) => prev + (element['score'] as double));
+          newValues[i] = sum / dayMoods.length;
+        } else {
+          // Default to 0.0 (empty bar) if no check-in occurred on this day
+          newValues[i] = 0.0;
+        }
+      }
+
+      // Filter and count occurrences in the 7-day weekly window (from 6 days ago to today)
+      final sevenDaysAgo = today.subtract(const Duration(days: 6));
+      final weeklyMoods = allMoods.where((m) {
+        final timestampStr = m['timestamp'] as String;
+        final date = DateTime.tryParse(timestampStr);
+        if (date == null) return false;
+        return date.isAfter(sevenDaysAgo) || 
+               (date.year == sevenDaysAgo.year && date.month == sevenDaysAgo.month && date.day == sevenDaysAgo.day);
+      }).toList();
+
+      for (var m in weeklyMoods) {
+        final mood = m['mood'] as String;
+        final matchedKey = moodLabels.firstWhere(
+          (l) => l.toLowerCase() == mood.toLowerCase(),
+          orElse: () => '',
+        );
+        if (matchedKey.isNotEmpty) {
+          counts[matchedKey] = (counts[matchedKey] ?? 0) + 1;
+        }
+      }
+
+      _weekValues = newValues;
+      _weekDays = newDays;
+      _weeklyMoodCounts = counts;
+
+      // Calculate average score of all check-ins in the weekly window (last 7 days)
+      if (weeklyMoods.isNotEmpty) {
+        final sum = weeklyMoods.fold<double>(0.0, (prev, m) => prev + (m['score'] as double));
+        _latestMoodScore = sum / weeklyMoods.length;
+      } else {
+        _latestMoodScore = 0.0;
+      }
+
+      // Update latest detected emotion from the database to reflect active mood
+      final latest = await DatabaseHelper.instance.getLatestSingleMood();
+      if (latest != null) {
+        _detectedEmotion = latest['mood'] as String;
+
+        final idx = moodLabels.indexWhere((l) => l.toLowerCase() == _detectedEmotion.toLowerCase());
+        if (idx != -1) {
+          _selectedEmojiIndex = idx;
+        }
+      } else {
+        _detectedEmotion = '';
+        _selectedEmojiIndex = 0;
+      }
+
+      _highlightIndex = 6; // Highlight today's bar
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Failed to load mood history: $e");
+    }
+  }
+
+  Future<void> resetWeeklyData() async {
+    try {
+      await DatabaseHelper.instance.clearAllMoods();
+      await _loadMoodHistoryFromDb();
+    } catch (e) {
+      debugPrint("Reset weekly data failed: $e");
+    }
+  }
+
+  String _getWeekdayLabel(int weekday) {
+    switch (weekday) {
+      case DateTime.monday: return 'M';
+      case DateTime.tuesday: return 'T';
+      case DateTime.wednesday: return 'W';
+      case DateTime.thursday: return 'T';
+      case DateTime.friday: return 'F';
+      case DateTime.saturday: return 'S';
+      case DateTime.sunday: return 'S';
+      default: return '';
+    }
   }
 
   int get sleepHours => _sleepHours;
@@ -169,6 +324,86 @@ class VuiStateManager extends ChangeNotifier {
       updateSleepTime(hours, minutes);
     }
   }
+
+  String get bedtimeRoutine => _bedtimeRoutine;
+  List<bool> get routineChecklist => _routineChecklist;
+
+  void toggleChecklistItem(int index, {bool? value}) {
+    if (index >= 0 && index < _routineChecklist.length) {
+      _routineChecklist[index] = value ?? !_routineChecklist[index];
+      notifyListeners();
+    }
+  }
+
+  void updateBedtimeRoutine(String time) {
+    _bedtimeRoutine = time;
+    notifyListeners();
+  }
+
+  bool _isBedtimeRoutineCommand(String text) {
+    final lower = text.toLowerCase();
+    bool isSettingTime = lower.contains('bedtime') && RegExp(r'\d+').hasMatch(lower);
+    bool isChecklistCommand = lower.contains('screens') ||
+        lower.contains('phone') ||
+        lower.contains('room') ||
+        lower.contains('temp') ||
+        lower.contains('cool') ||
+        lower.contains('wake') ||
+        lower.contains('consistent') ||
+        lower.contains('checklist');
+    return isSettingTime || isChecklistCommand;
+  }
+
+  String _processBedtimeRoutineCommand(String text) {
+    final lower = text.toLowerCase();
+    
+    // 1. Time setting
+    final timeRegExp = RegExp(r'(\d{1,2}(?::\d{2})?\s*(?:pm|am)?)', caseSensitive: false);
+    final timeMatch = timeRegExp.firstMatch(lower);
+    if (timeMatch != null && lower.contains('bedtime')) {
+      final timeStr = timeMatch.group(1)?.toUpperCase() ?? '';
+      String formattedTime = timeStr;
+      if (!formattedTime.contains('AM') && !formattedTime.contains('PM')) {
+        final parts = formattedTime.split(':');
+        final hour = int.tryParse(parts[0]) ?? 0;
+        if (hour > 0 && hour <= 12) {
+          formattedTime = "$formattedTime PM";
+        }
+      }
+      updateBedtimeRoutine(formattedTime);
+      return "Okay, I've updated tonight's bedtime routine to $formattedTime.";
+    }
+
+    // 2. Checklist items
+    bool updated = false;
+    if (lower.contains('screens') || lower.contains('phone')) {
+      bool isDone = !lower.contains('not') && !lower.contains('uncheck');
+      toggleChecklistItem(0, value: isDone);
+      updated = true;
+    }
+    if (lower.contains('room') || lower.contains('temp') || lower.contains('cool')) {
+      bool isDone = !lower.contains('not') && !lower.contains('uncheck');
+      toggleChecklistItem(1, value: isDone);
+      updated = true;
+    }
+    if (lower.contains('wake') || lower.contains('consistent')) {
+      bool isDone = !lower.contains('not') && !lower.contains('uncheck');
+      toggleChecklistItem(2, value: isDone);
+      updated = true;
+    }
+
+    if (lower.contains('reset') && lower.contains('checklist')) {
+      _routineChecklist = [false, false, false];
+      notifyListeners();
+      return "I've reset tonight's routine checklist.";
+    }
+
+    if (updated) {
+      return "Great, I've updated tonight's routine checklist. Keep it up!";
+    }
+
+    return "Tonight's routine updated.";
+  }
   String get breathingPhase => _breathingPhase;
   int get breathingCycle => _breathingCycle;
   int get maxCycles => _maxCycles;
@@ -180,6 +415,7 @@ class VuiStateManager extends ChangeNotifier {
     _speech = stt.SpeechToText();
     _tts = FlutterTts();
     _initVoiceServices();
+    _loadMoodHistoryFromDb();
   }
 
   void setNavigationNotifier(NavigationNotifier nav) {
@@ -319,7 +555,18 @@ class VuiStateManager extends ChangeNotifier {
       return;
     }
 
-    // ── 2. Navigation commands ──────────────────────────────────────────────
+    // ── 2. Sleep/Bedtime Routine Updates (intercept before navigation checks) ──
+    final isSleepUpdate = _isReportingSleepTime(lower) || _isBedtimeRoutineCommand(lower);
+    if (isSleepUpdate) {
+      if (nav.currentIndex != 3) {
+        nav.navigateTo(3);
+        _currentModule = VuiModule.sleep;
+      }
+      _processDialogue(text);
+      return;
+    }
+
+    // ── 3. Navigation commands ──────────────────────────────────────────────
     if (_matchesNav(lower, ['home', 'go home', 'main screen', 'main'])) {
       nav.navigateTo(0);
       _speakSera("Going to Home.");
@@ -511,6 +758,27 @@ class VuiStateManager extends ChangeNotifier {
 
         _currentNode = DialogueNode(
           id: 'sleep_time_logged',
+          text: responseText,
+          chips: ["Breathing exercise", "Sleep tips", "Exit"],
+          next: (input) {
+            if (input.toLowerCase().contains('breath') || input.toLowerCase().contains('exercise')) {
+              return 'breathing_intro';
+            }
+            if (input.toLowerCase().contains('tip') || input.toLowerCase().contains('hygiene') || input.toLowerCase().contains('sleep')) {
+              return 'sleep_general_advice';
+            }
+            return 'sleep_end';
+          }
+        );
+        _speakSera(_currentNode.text);
+        return;
+      }
+
+      if (_currentModule == VuiModule.sleep && _isBedtimeRoutineCommand(text)) {
+        final String responseText = _processBedtimeRoutineCommand(text);
+
+        _currentNode = DialogueNode(
+          id: 'bedtime_routine_updated',
           text: responseText,
           chips: ["Breathing exercise", "Sleep tips", "Exit"],
           next: (input) {

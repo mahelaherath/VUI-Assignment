@@ -121,7 +121,7 @@ class SleepScreen extends StatelessWidget {
                               color: color.withOpacity(0.4), width: 1.2),
                         ),
                         child: Text(
-                          '10:30\nPM',
+                          mgr.bedtimeRoutine.replaceAll(' ', '\n'),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.dmSans(
                             color: color,
@@ -137,7 +137,7 @@ class SleepScreen extends StatelessWidget {
                   ...List.generate(_tips.length, (i) {
                     return Column(
                       children: [
-                        _SleepTipRow(tip: _tips[i], color: color),
+                        _SleepTipRow(tip: _tips[i], color: color, index: i),
                         if (i < _tips.length - 1)
                           Divider(
                             color: Colors.white.withOpacity(0.05),
@@ -232,21 +232,22 @@ class _SleepTipData {
 
 // ─── INTERACTIVE CHECKLIST ROW ───────────────────────────────────────────────
 
-class _SleepTipRow extends StatefulWidget {
+class _SleepTipRow extends StatelessWidget {
   final _SleepTipData tip;
   final Color color;
+  final int index;
 
-  const _SleepTipRow({required this.tip, required this.color});
-
-  @override
-  State<_SleepTipRow> createState() => _SleepTipRowState();
-}
-
-class _SleepTipRowState extends State<_SleepTipRow> {
-  bool _done = false;
+  const _SleepTipRow({
+    required this.tip,
+    required this.color,
+    required this.index,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final mgr = Provider.of<VuiStateManager>(context);
+    final done = mgr.routineChecklist[index];
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
@@ -254,22 +255,21 @@ class _SleepTipRowState extends State<_SleepTipRow> {
         children: [
           // Checkbox
           GestureDetector(
-            onTap: () => setState(() => _done = !_done),
+            onTap: () => mgr.toggleChecklistItem(index),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: 26,
               height: 26,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
-                color:
-                    _done ? widget.color.withOpacity(0.15) : Colors.transparent,
+                color: done ? color.withOpacity(0.15) : Colors.transparent,
                 border: Border.all(
-                  color: _done ? widget.color : Colors.white24,
+                  color: done ? color : Colors.white24,
                   width: 1.5,
                 ),
               ),
-              child: _done
-                  ? Icon(Icons.check_rounded, color: widget.color, size: 16)
+              child: done
+                  ? Icon(Icons.check_rounded, color: color, size: 16)
                   : null,
             ),
           ),
@@ -280,19 +280,18 @@ class _SleepTipRowState extends State<_SleepTipRow> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.tip.title,
+                  tip.title,
                   style: GoogleFonts.dmSans(
-                    color: _done ? Colors.white38 : Colors.white,
+                    color: done ? Colors.white38 : Colors.white,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    decoration:
-                        _done ? TextDecoration.lineThrough : null,
+                    decoration: done ? TextDecoration.lineThrough : null,
                     decorationColor: Colors.white38,
                   ),
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  widget.tip.subtitle,
+                  tip.subtitle,
                   style: GoogleFonts.dmSans(
                     color: Colors.white38,
                     fontSize: 11,
